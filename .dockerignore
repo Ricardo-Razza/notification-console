@@ -1,0 +1,9 @@
+node_modules
+tools
+dist
+.angular
+.git
+.env*
+test-results
+playwright-report
+e2e

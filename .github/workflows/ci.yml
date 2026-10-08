@@ -1,0 +1,64 @@
+name: Console CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run security
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+      - uses: actions/upload-artifact@v4
+        with:
+          name: console-production
+          path: dist/notification-console/browser
+  integration:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: notification-console
+      - uses: actions/checkout@v4
+        with:
+          repository: Ricardo-Razza/notification-service
+          path: notification-service
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: notification-console/package-lock.json
+      - run: npm ci
+        working-directory: notification-console
+      - run: npx playwright install --with-deps chromium
+        working-directory: notification-console
+      - run: docker build -t notification-service:part2 notification-service
+      - run: docker build -t notification-console:part2 notification-console
+      - run: docker compose -f docker-compose.smoke.yml up -d --wait
+        working-directory: notification-service
+      - run: npm run e2e
+        working-directory: notification-console
+        env:
+          E2E_BASE_URL: http://127.0.0.1:14201
+      - if: always()
+        run: docker compose -f docker-compose.smoke.yml down
+        working-directory: notification-service
+  image:
+    if: github.ref == 'refs/heads/main'
+    needs: [quality, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --build-arg BUILD_REVISION=${{ github.sha }} -t notification-console:ci .
