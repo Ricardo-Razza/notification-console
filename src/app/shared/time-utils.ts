@@ -1,3 +1,4 @@
+import { recurrenceDescription } from './schedule-rules';
 export const CRON_PRESETS = [
   { label: 'Todo dia às 8h', value: '0 0 8 * * *' },
   { label: 'De hora em hora', value: '0 0 * * * *' },
@@ -5,7 +6,7 @@ export const CRON_PRESETS = [
   { label: 'Toda segunda às 8h', value: '0 0 8 * * MON' },
 ];
 export function describeCron(cron: string): string {
-  return CRON_PRESETS.find((item) => item.value === cron)?.label ?? 'Cron: ' + cron;
+  return CRON_PRESETS.find((item) => item.value === cron)?.label ?? recurrenceDescription(cron);
 }
 export function timeZones(): string[] {
   return [

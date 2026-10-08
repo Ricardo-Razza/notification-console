@@ -64,13 +64,13 @@ test('real backend: keys, preview, delivery, retry, schedule and viewer', async 
   const app = apps.find((item) => item.name === appName);
   expect(app?.id).toBeTruthy();
   await page.goto('/templates/new');
-  await page.getByLabel('Código', { exact: true }).fill(templateCode);
-  await select(page, 'Escopo', appName);
-  await page.getByLabel('Assunto', { exact: true }).fill('Teste {{ name }}');
+  await page.getByLabel('Identificador do template', { exact: true }).fill(templateCode);
+  await select(page, 'Disponível para', appName);
+  await page.getByLabel('Assunto do e-mail', { exact: true }).fill('Teste {{ name }}');
   await page
-    .getByLabel('Conteúdo', { exact: true })
+    .getByLabel('Mensagem', { exact: true })
     .fill('Olá {{ name }}. Conteúdo <b>seguro como texto</b>.');
-  await page.getByLabel('Exemplo: name', { exact: true }).fill('Operação');
+  await page.getByLabel('Exemplo: Nome', { exact: true }).fill('Operação');
   await expect(page.locator('pre')).toContainText('Olá Operação');
   await expect(page.locator('pre b')).toHaveCount(0);
   await page.getByRole('button', { name: 'Salvar template', exact: true }).click();
@@ -79,7 +79,7 @@ test('real backend: keys, preview, delivery, retry, schedule and viewer', async 
   await select(page, 'Aplicação', appName);
   await select(page, 'Template', templateCode);
   await page.getByLabel('Destinatário', { exact: true }).fill(recipient);
-  await page.getByLabel('Variável: name', { exact: true }).fill('Operação');
+  await page.getByLabel('Nome', { exact: true }).fill('Operação');
   await expect(page.locator('pre')).toContainText('Olá Operação');
   await page.getByRole('button', { name: 'Enviar notificação', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Notificação registrada' })).toBeVisible();
@@ -149,11 +149,11 @@ test('real backend: keys, preview, delivery, retry, schedule and viewer', async 
     )
     .toBe('SENT');
   await page.goto('/schedules/new');
-  await page.getByLabel('Nome', { exact: true }).fill('Diário ' + stamp);
+  await page.getByLabel('Nome do agendamento', { exact: true }).fill('Diário ' + stamp);
   await select(page, 'Aplicação', appName);
   await page.getByLabel('Destinatário', { exact: true }).fill(recipient);
-  await page.getByLabel('Código do template', { exact: true }).fill(templateCode);
-  await page.getByLabel('Variáveis (objeto JSON com valores de texto)').fill('{"name":"Operação"}');
+  await select(page, 'Template', templateCode);
+  await page.getByLabel('Nome', { exact: true }).fill('Operação');
   await expect(page.getByRole('heading', { name: 'Próximas execuções' })).toBeVisible();
   await expect(page.locator('ol li')).toHaveCount(5);
   await page.getByRole('button', { name: 'Salvar agendamento', exact: true }).click();
@@ -177,8 +177,8 @@ test('real backend: keys, preview, delivery, retry, schedule and viewer', async 
   await expect(page.getByRole('link', { name: 'Novo template' })).toHaveCount(0);
   await page.getByRole('link', { name: templateCode, exact: true }).click();
   await expect(page.getByRole('button', { name: 'Salvar template' })).toHaveCount(0);
-  await expect(page.getByLabel('Código', { exact: true })).toBeDisabled();
-  await page.getByLabel('Exemplo: name', { exact: true }).fill('Consulta');
+  await expect(page.getByLabel('Identificador do template', { exact: true })).toBeDisabled();
+  await page.getByLabel('Exemplo: Nome', { exact: true }).fill('Consulta');
   await expect(page.locator('pre')).toContainText('Olá Consulta');
   await page.goto('/send');
   await expect(page).toHaveURL(/dashboard/);

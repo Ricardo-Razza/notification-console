@@ -35,7 +35,7 @@ import { Confirm } from '../../shared/confirm-dialog';
       <div>
         <p class="eyebrow">CONTEÚDO</p>
         <h1 id="page-title" tabindex="-1">Templates</h1>
-        <p class="muted">Mensagens reutilizáveis, com variáveis e prévia ao vivo.</p>
+        <p class="muted">Modelos de mensagem para personalizar e reutilizar nos envios.</p>
       </div>
       @if (auth.admin()) {
         <a mat-flat-button routerLink="/templates/new">Novo template</a>
@@ -51,10 +51,11 @@ import { Confirm } from '../../shared/confirm-dialog';
             ><mat-option value="PUSH">Push</mat-option></mat-select
           ></mat-form-field
         ><mat-form-field
-          ><mat-label>Escopo</mat-label
+          ><mat-label>Disponibilidade</mat-label
           ><mat-select formControlName="scope"
-            ><mat-option value="">Todos</mat-option><mat-option value="GLOBAL">Global</mat-option
-            ><mat-option value="APPLICATION">Por aplicação</mat-option></mat-select
+            ><mat-option value="">Todos</mat-option
+            ><mat-option value="GLOBAL">Todas as aplicações</mat-option
+            ><mat-option value="APPLICATION">Aplicação específica</mat-option></mat-select
           ></mat-form-field
         ><mat-form-field
           ><mat-label>Aplicação</mat-label
@@ -83,7 +84,7 @@ import { Confirm } from '../../shared/confirm-dialog';
         >
           <table mat-table [dataSource]="data()?.items ?? []">
             <ng-container matColumnDef="code"
-              ><th mat-header-cell *matHeaderCellDef>Código</th>
+              ><th mat-header-cell *matHeaderCellDef>Modelo</th>
               <td mat-cell *matCellDef="let row">
                 <a [routerLink]="['/templates', row.id]">{{ row.code }}</a>
               </td></ng-container
@@ -93,7 +94,7 @@ import { Confirm } from '../../shared/confirm-dialog';
                 {{ row.channel === 'EMAIL' ? 'E-mail' : row.channel }}
               </td></ng-container
             ><ng-container matColumnDef="scope"
-              ><th mat-header-cell *matHeaderCellDef>Escopo</th>
+              ><th mat-header-cell *matHeaderCellDef>Disponível para</th>
               <td mat-cell *matCellDef="let row">
                 <span class="badge purple">{{ scopeName(row.applicationId) }}</span>
               </td></ng-container
@@ -192,7 +193,9 @@ export class Templates {
     });
   }
   scopeName(id: string | undefined) {
-    return id ? (this.apps().find((app) => app.id === id)?.name ?? 'Aplicação') : 'Global';
+    return id
+      ? (this.apps().find((app) => app.id === id)?.name ?? 'Aplicação')
+      : 'Todas as aplicações';
   }
   remove(row: Template) {
     if (!row.id) return;

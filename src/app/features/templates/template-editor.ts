@@ -8,7 +8,7 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatFormFieldModule, MAT_FORM_FIELD_DEFAULT_OPTIONS } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatInputModule } from '@angular/material/input';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -20,8 +20,16 @@ import { ApiError } from '../../core/http/api-error';
 import { Toast } from '../../shared/toast';
 import { Loading, ErrorState } from '../../shared/states';
 import { detectVariables, localPreview } from '../../shared/template-utils';
+import {
+  messageFieldLabel,
+  messageFieldExample,
+  focusInvalidField,
+} from '../../shared/message-utils';
 @Component({
   selector: 'app-template-editor',
+  providers: [
+    { provide: MAT_FORM_FIELD_DEFAULT_OPTIONS, useValue: { subscriptSizing: 'dynamic' } },
+  ],
   imports: [
     ReactiveFormsModule,
     RouterLink,
@@ -33,106 +41,7 @@ import { detectVariables, localPreview } from '../../shared/template-utils';
     ErrorState,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<header class="page-header">
-      <div>
-        <p class="eyebrow">CONTEÚDO</p>
-        <h1 id="page-title" tabindex="-1">{{ id ? 'Template' : 'Novo template' }}</h1>
-        <p class="muted">
-          {{
-            auth.admin()
-              ? 'Edite a mensagem e confira o resultado antes de salvar.'
-              : 'Consulta do template e prévia de exemplo.'
-          }}
-        </p>
-      </div>
-      <a mat-button routerLink="/templates">Voltar</a>
-    </header>
-    @if (busy()) {
-      <app-loading />
-    } @else if (loadError()) {
-      <app-error-state [message]="loadError()" (retry)="load()" />
-    } @else {
-      <div class="two-column">
-        <section class="panel">
-          <form [formGroup]="form" (ngSubmit)="save()">
-            <div class="form-grid">
-              <mat-form-field
-                ><mat-label>Código</mat-label
-                ><input matInput formControlName="code" maxlength="100" /><mat-error>{{
-                  fieldError('code') || 'Use letras maiúsculas, números e underscore.'
-                }}</mat-error></mat-form-field
-              ><mat-form-field
-                ><mat-label>Canal</mat-label
-                ><mat-select formControlName="channel"
-                  ><mat-option value="EMAIL">E-mail</mat-option
-                  ><mat-option value="SMS">SMS</mat-option
-                  ><mat-option value="PUSH">Push</mat-option></mat-select
-                ></mat-form-field
-              >
-            </div>
-            <mat-form-field
-              ><mat-label>Escopo</mat-label
-              ><mat-select formControlName="applicationId"
-                ><mat-option value="">Global</mat-option>
-                @for (app of apps(); track app.id) {
-                  <mat-option [value]="app.id">{{ app.name }}</mat-option>
-                }
-              </mat-select></mat-form-field
-            ><mat-form-field
-              ><mat-label>Assunto</mat-label
-              ><input matInput formControlName="subject" maxlength="255" /><mat-error>{{
-                fieldError('subject') || 'Informe o assunto do e-mail.'
-              }}</mat-error></mat-form-field
-            ><mat-form-field
-              ><mat-label>Conteúdo</mat-label
-              ><textarea matInput formControlName="content" rows="12" maxlength="50000"></textarea
-              ><mat-error>{{
-                fieldError('content') || 'Informe o conteúdo.'
-              }}</mat-error></mat-form-field
-            >
-            @if (saveError()) {
-              <p role="alert" class="form-error">{{ saveError() }}</p>
-            }
-            @if (auth.admin()) {
-              <button mat-flat-button [disabled]="form.invalid || saving()">
-                {{ saving() ? 'Salvando…' : 'Salvar template' }}
-              </button>
-            }
-          </form>
-        </section>
-        <section class="panel">
-          <h2>Prévia ao vivo</h2>
-          <p class="muted">Variáveis de sistema disponíveis: today e now.</p>
-          <div class="chips">
-            @for (name of names(); track name) {
-              <span class="chip">{{ name }}</span>
-            }
-          </div>
-          <form [formGroup]="examples">
-            @for (name of names(); track name) {
-              @if (name !== 'today' && name !== 'now') {
-                <mat-form-field
-                  ><mat-label>Exemplo: {{ name }}</mat-label
-                  ><input matInput [formControlName]="name" maxlength="2000"
-                /></mat-form-field>
-              }
-            }
-          </form>
-          @if (previewError()) {
-            <p role="alert" class="form-error">{{ previewError() }}</p>
-          }
-          @if (preview(); as result) {
-            @if (result.missingVariables?.length) {
-              <p class="form-note" role="status">
-                Faltam valores: {{ result.missingVariables.join(', ') }}
-              </p>
-            }
-            <h3>{{ result.subject }}</h3>
-            <pre>{{ result.content }}</pre>
-          }
-        </section>
-      </div>
-    }`,
+  templateUrl: './template-editor.html',
 })
 export class TemplateEditor {
   private readonly api = inject(ConsoleApi);
@@ -150,6 +59,37 @@ export class TemplateEditor {
   readonly saveError = signal('');
   readonly busy = signal(!!this.id);
   readonly saving = signal(false);
+  readonly fieldLabel = messageFieldLabel;
+  readonly fieldExample = messageFieldExample;
+  readonly variableName = new FormControl('', {
+    nonNullable: true,
+    validators: [Validators.required, Validators.pattern(/^\w{1,64}$/)],
+  });
+  readonly insertionField = signal<'subject' | 'content'>('content');
+  private insertionStart = 0;
+  private insertionEnd = 0;
+  readonly starters = [
+    {
+      label: 'Boas-vindas',
+      code: 'BOAS_VINDAS',
+      subject: 'Boas-vindas, {{nome}}!',
+      content:
+        'Olá, {{nome}}!\n\nÉ um prazer ter você por aqui. Sua conta está pronta para usar.\n\nAté logo!',
+    },
+    {
+      label: 'Lembrete',
+      code: 'LEMBRETE',
+      subject: 'Lembrete: {{titulo}}',
+      content:
+        'Olá, {{nome}}!\n\nPassando para lembrar: {{titulo}}.\nData: {{data}}\n\nSe precisar de ajuda, entre em contato.',
+    },
+    {
+      label: 'Aviso de novidade',
+      code: 'NOVIDADE',
+      subject: '{{titulo}}',
+      content: 'Olá, {{nome}}!\n\n{{mensagem}}\n\nSaiba mais: {{link}}',
+    },
+  ];
   readonly form = inject(FormBuilder).nonNullable.group({
     code: [
       '',
@@ -257,11 +197,60 @@ export class TemplateEditor {
   fieldError(name: keyof typeof this.form.controls) {
     return this.form.controls[name].getError('server') as string | undefined;
   }
+  normalizeCode() {
+    if (this.id) return;
+    this.form.controls.code.setValue(
+      this.form.controls.code.value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, ''),
+    );
+  }
+  useStarter(index: number) {
+    if (!this.auth.admin() || this.id || this.form.controls.content.value) return;
+    const starter = this.starters[index];
+    if (!starter) return;
+    this.form.patchValue({
+      code: this.form.controls.code.value || starter.code,
+      subject: starter.subject,
+      content: starter.content,
+    });
+    this.form.markAsDirty();
+  }
+  rememberCursor(field: 'subject' | 'content', element: HTMLInputElement | HTMLTextAreaElement) {
+    this.insertionField.set(field);
+    this.insertionStart = element.selectionStart ?? element.value.length;
+    this.insertionEnd = element.selectionEnd ?? element.value.length;
+  }
+  insertVariable(name = this.variableName.value) {
+    if (!this.auth.admin() || !/^\w{1,64}$/.test(name)) {
+      this.variableName.markAsTouched();
+      return;
+    }
+    const control = this.form.controls[this.insertionField()];
+    const text = control.value;
+    const start = Math.min(this.insertionStart, text.length);
+    const end = Math.min(this.insertionEnd, text.length);
+    const token = '{{' + name + '}}';
+    control.setValue(text.slice(0, start) + token + text.slice(end));
+    this.insertionStart = this.insertionEnd = start + token.length;
+    control.markAsDirty();
+    this.variableName.reset('');
+  }
   hasUnsavedChanges() {
     return this.auth.admin() && this.form.dirty;
   }
   save() {
-    if (!this.auth.admin() || this.form.invalid) return;
+    if (!this.auth.admin() || this.saving()) return;
+    this.normalizeCode();
+    this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.saveError.set('Confira os campos destacados antes de salvar.');
+      focusInvalidField('template-form');
+      return;
+    }
     const value = this.form.getRawValue();
     this.saving.set(true);
     this.saveError.set('');

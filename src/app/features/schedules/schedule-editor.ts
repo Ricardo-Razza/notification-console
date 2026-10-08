@@ -6,24 +6,64 @@ import {
   signal,
   computed,
 } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  FormBuilder,
+  FormControl,
+  FormRecord,
+  ReactiveFormsModule,
+  Validators,
+} from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatFormFieldModule, MAT_FORM_FIELD_DEFAULT_OPTIONS } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatInputModule } from '@angular/material/input';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { debounceTime, switchMap, of, catchError, finalize } from 'rxjs';
+import {
+  debounceTime,
+  switchMap,
+  of,
+  catchError,
+  finalize,
+  merge,
+  map,
+  distinctUntilChanged,
+  startWith,
+} from 'rxjs';
 import { ConsoleApi } from '../../core/api/console-api';
 import { AuthStore } from '../../core/auth/auth-store';
-import type { Application, Channel, CronPreview, ScheduleUpdate } from '../../core/api/models';
+import type {
+  Application,
+  Channel,
+  CronPreview,
+  ScheduleUpdate,
+  Template,
+  Preview,
+} from '../../core/api/models';
 import { Toast } from '../../shared/toast';
 import { DateTime } from '../../shared/date-time';
 import { Loading, ErrorState } from '../../shared/states';
-import { CRON_PRESETS, timeZones, localDateTimeToUtc } from '../../shared/time-utils';
-import { readVariables } from '../../shared/template-utils';
+import { timeZones, localDateTimeToUtc } from '../../shared/time-utils';
+import { localPreview } from '../../shared/template-utils';
+import {
+  visibleTemplates,
+  syncMessageVariables,
+  messageFieldLabel,
+  messageFieldExample,
+  focusInvalidField,
+} from '../../shared/message-utils';
+import {
+  WEEKDAYS,
+  recurrenceCron,
+  parseRecurrence,
+  recurrenceDescription,
+  type Frequency,
+} from '../../shared/schedule-rules';
 @Component({
   selector: 'app-schedule-editor',
+  providers: [
+    { provide: MAT_FORM_FIELD_DEFAULT_OPTIONS, useValue: { subscriptSizing: 'dynamic' } },
+  ],
   imports: [
     ReactiveFormsModule,
     RouterLink,
@@ -36,147 +76,7 @@ import { readVariables } from '../../shared/template-utils';
     ErrorState,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<header class="page-header">
-      <div>
-        <p class="eyebrow">AUTOMAÇÃO</p>
-        <h1 id="page-title" tabindex="-1">{{ id ? 'Agendamento' : 'Novo agendamento' }}</h1>
-        <p class="muted">Configure quando e para quem enviar.</p>
-      </div>
-      <a mat-button routerLink="/schedules">Voltar</a>
-    </header>
-    @if (busy()) {
-      <app-loading />
-    } @else if (loadError()) {
-      <app-error-state [message]="loadError()" (retry)="load()" />
-    } @else {
-      <div class="two-column">
-        <section class="panel">
-          <form [formGroup]="form" (ngSubmit)="save()">
-            <mat-form-field
-              ><mat-label>Nome</mat-label
-              ><input matInput formControlName="name" maxlength="100" /><mat-error
-                >Informe o nome.</mat-error
-              ></mat-form-field
-            ><mat-form-field
-              ><mat-label>Aplicação</mat-label
-              ><mat-select formControlName="applicationId">
-                @for (app of apps(); track app.id) {
-                  <mat-option [value]="app.id">{{ app.name }}</mat-option>
-                }</mat-select
-              ><mat-error>Selecione uma aplicação.</mat-error></mat-form-field
-            >
-            @if (auth.admin()) {
-              <mat-form-field
-                ><mat-label>Frequência sugerida</mat-label
-                ><mat-select
-                  (selectionChange)="form.controls.cron.setValue($event.value); form.markAsDirty()"
-                >
-                  @for (preset of presets; track preset.value) {
-                    <mat-option [value]="preset.value">{{ preset.label }}</mat-option>
-                  }
-                </mat-select></mat-form-field
-              >
-            }
-            <mat-form-field
-              ><mat-label>Cron avançado (6 campos)</mat-label
-              ><input matInput formControlName="cron" /><mat-hint
-                >Segundo, minuto, hora, dia, mês e dia da semana.</mat-hint
-              ><mat-error>Informe um cron com 6 campos.</mat-error></mat-form-field
-            >
-            @if (auth.admin()) {
-              <mat-form-field
-                ><mat-label>Buscar fuso</mat-label
-                ><input matInput #zoneInput type="search" (input)="zoneSearch.set(zoneInput.value)"
-              /></mat-form-field>
-            }
-            <mat-form-field
-              ><mat-label>Fuso do agendamento</mat-label
-              ><mat-select formControlName="timezone">
-                @for (zone of filteredZones(); track zone) {
-                  <mat-option [value]="zone">{{ zone }}</mat-option>
-                }
-              </mat-select></mat-form-field
-            >
-            <div class="form-grid">
-              <mat-form-field
-                ><mat-label>Início opcional (no fuso escolhido)</mat-label
-                ><input matInput type="datetime-local" formControlName="startAt" /></mat-form-field
-              ><mat-form-field
-                ><mat-label>Fim opcional (no fuso escolhido)</mat-label
-                ><input matInput type="datetime-local" formControlName="endAt"
-              /></mat-form-field>
-            </div>
-            <mat-form-field
-              ><mat-label>Canal</mat-label
-              ><mat-select formControlName="channel"
-                ><mat-option value="EMAIL">E-mail</mat-option
-                ><mat-option value="SMS">SMS</mat-option
-                ><mat-option value="PUSH">Push</mat-option></mat-select
-              ></mat-form-field
-            ><mat-form-field
-              ><mat-label>Destinatário</mat-label
-              ><input matInput formControlName="recipient" maxlength="255" /><mat-error
-                >Informe um destinatário válido.</mat-error
-              ></mat-form-field
-            ><mat-form-field
-              ><mat-label>Código do template</mat-label
-              ><input matInput formControlName="template" maxlength="100" /><mat-error
-                >Informe o template.</mat-error
-              ></mat-form-field
-            ><mat-form-field
-              ><mat-label>Variáveis (objeto JSON com valores de texto)</mat-label
-              ><textarea matInput formControlName="variables" rows="5"></textarea>
-            </mat-form-field>
-            @if (saveError()) {
-              <p class="form-error" role="alert">{{ saveError() }}</p>
-            }
-            @if (auth.admin()) {
-              <button mat-flat-button [disabled]="form.invalid || saving()">
-                {{ saving() ? 'Salvando…' : 'Salvar agendamento' }}
-              </button>
-            }
-          </form>
-        </section>
-        <section class="panel">
-          <h2>Próximas execuções</h2>
-          <p class="muted">Fuso do navegador: {{ browserZone }}</p>
-          @if (previewError()) {
-            <p class="form-error" role="alert">{{ previewError() }}</p>
-          }
-          @if (!auth.admin()) {
-            <p class="muted">
-              O acesso de consulta permite ver as datas já calculadas. A simulação de cron exige
-              administrador.
-            </p>
-          }
-          @if (preview(); as result) {
-            @if (result.daylightSavingTransition) {
-              <p class="form-note">
-                Há uma mudança de horário de verão neste período. Confira as datas.
-              </p>
-            }
-            <ol>
-              @for (item of result.occurrences; track item.utc) {
-                <li>
-                  <p>
-                    {{ item.local }} ({{ item.timezone }})<br /><app-date-time [value]="item.utc" />
-                  </p>
-                </li>
-              }
-            </ol>
-            @if (highFrequency()) {
-              <p class="form-note">
-                Este agendamento executa com frequência alta. Confira o limite de uso da aplicação.
-              </p>
-            }
-          }
-          @if (nextRun()) {
-            <h3>Próxima execução salva</h3>
-            <app-date-time [value]="nextRun()" />
-          }
-        </section>
-      </div>
-    }`,
+  templateUrl: './schedule-editor.html',
 })
 export class ScheduleEditor {
   private readonly api = inject(ConsoleApi);
@@ -187,6 +87,7 @@ export class ScheduleEditor {
   readonly auth = inject(AuthStore);
   readonly id = this.route.snapshot.paramMap.get('id');
   readonly apps = signal<Application[]>([]);
+  readonly activeApps = computed(() => this.apps().filter((app) => app.active));
   readonly busy = signal(!!this.id);
   readonly saving = signal(false);
   readonly loadError = signal('');
@@ -194,7 +95,26 @@ export class ScheduleEditor {
   readonly previewError = signal('');
   readonly preview = signal<CronPreview | null>(null);
   readonly nextRun = signal<string | undefined>(undefined);
-  readonly presets = CRON_PRESETS;
+  readonly weekdays = WEEKDAYS;
+  readonly templates = signal<Template[]>([]);
+  readonly templatesLoading = signal(false);
+  readonly templateError = signal('');
+  readonly names = signal<string[]>([]);
+  readonly messagePreview = signal<Preview | null>(null);
+  readonly fieldLabel = messageFieldLabel;
+  readonly fieldExample = messageFieldExample;
+  readonly recurrenceText = signal('Todos os dias às 08:00');
+  readonly recurrenceError = signal('');
+  readonly frequency = signal<Frequency>('daily');
+  private savedVariables: Record<string, string> = {};
+  private additionalNames: string[] = [];
+  readonly variables = new FormRecord<FormControl<string>>({});
+  readonly recurrence = inject(FormBuilder).nonNullable.group({
+    frequency: ['daily' as Frequency],
+    time: ['08:00'],
+    weekday: ['MON'],
+    monthDay: [1],
+  });
   readonly zones = timeZones();
   readonly browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   readonly zoneSearch = signal('');
@@ -214,21 +134,79 @@ export class ScheduleEditor {
     timezone: [this.browserZone, Validators.required],
     channel: ['EMAIL' as Channel, Validators.required],
     recipient: ['', [Validators.required, Validators.maxLength(255)]],
-    template: ['', [Validators.required, Validators.maxLength(100)]],
-    variables: ['{}'],
+    template: [{ value: '', disabled: true }, [Validators.required, Validators.maxLength(100)]],
     startAt: [''],
     endAt: [''],
   });
   constructor() {
-    this.api
-      .applications()
+    this.recurrence.valueChanges.pipe(takeUntilDestroyed(this.destroy)).subscribe(() => {
+      const value = this.recurrence.getRawValue();
+      this.frequency.set(value.frequency);
+      this.recurrenceError.set('');
+      if (value.frequency !== 'custom') {
+        try {
+          this.form.controls.cron.setValue(recurrenceCron(value));
+        } catch (error) {
+          this.recurrenceError.set(error instanceof Error ? error.message : 'Confira o horário.');
+        }
+      }
+      this.form.markAsDirty();
+    });
+    this.form.valueChanges.pipe(takeUntilDestroyed(this.destroy)).subscribe(() => {
+      this.recurrenceText.set(recurrenceDescription(this.form.controls.cron.value));
+    });
+    merge(this.form.controls.applicationId.valueChanges, this.form.controls.channel.valueChanges)
+      .pipe(
+        map(() => ({
+          applicationId: this.form.controls.applicationId.value,
+          channel: this.form.controls.channel.value,
+        })),
+        debounceTime(0),
+        switchMap((value) => {
+          this.templates.set([]);
+          this.form.controls.template.disable({ emitEvent: false });
+          this.messagePreview.set(null);
+          this.templateError.set('');
+          this.templatesLoading.set(!!value.applicationId);
+          if (!value.applicationId) return of([] as Template[]);
+          return visibleTemplates(this.api, value.applicationId, value.channel).pipe(
+            catchError((error) => {
+              this.templateError.set(this.toast.message(error));
+              return of([] as Template[]);
+            }),
+          );
+        }),
+        takeUntilDestroyed(this.destroy),
+      )
+      .subscribe((templates) => {
+        this.templatesLoading.set(false);
+        this.templates.set(templates);
+        if (templates.length && this.auth.admin())
+          this.form.controls.template.enable({ emitEvent: false });
+        if (!this.form.controls.template.value && templates.length === 1)
+          this.form.controls.template.setValue(templates[0].code ?? '');
+        this.syncVariables();
+      });
+    merge(this.form.controls.template.valueChanges, this.variables.valueChanges)
       .pipe(takeUntilDestroyed(this.destroy))
-      .subscribe({
-        next: (apps) => this.apps.set(apps),
-        error: (error) => this.toast.error(error),
+      .subscribe(() => this.syncVariables());
+    this.form.controls.channel.valueChanges
+      .pipe(startWith(this.form.controls.channel.value), takeUntilDestroyed(this.destroy))
+      .subscribe((channel) => {
+        this.form.controls.recipient.setValidators(
+          channel === 'EMAIL'
+            ? [Validators.required, Validators.email, Validators.maxLength(255)]
+            : [Validators.required, Validators.maxLength(255)],
+        );
+        this.form.controls.recipient.updateValueAndValidity({ emitEvent: false });
       });
     this.form.valueChanges
       .pipe(
+        map(() => ({
+          cron: this.form.controls.cron.value,
+          timezone: this.form.controls.timezone.value,
+        })),
+        distinctUntilChanged((a, b) => a.cron === b.cron && a.timezone === b.timezone),
         debounceTime(400),
         switchMap(() => {
           if (!this.auth.admin()) return of(null);
@@ -244,13 +222,29 @@ export class ScheduleEditor {
         takeUntilDestroyed(this.destroy),
       )
       .subscribe((value) => this.preview.set(value));
-    if (this.id) this.load();
-    else this.form.updateValueAndValidity();
+    this.load();
+    if (!this.id) this.form.updateValueAndValidity();
   }
   load() {
-    if (!this.id) return;
     this.busy.set(true);
     this.loadError.set('');
+    this.api
+      .applications()
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (apps) => {
+          this.apps.set(apps);
+          const active = apps.filter((app) => app.active);
+          if (!this.id && !this.form.controls.applicationId.value && active.length === 1)
+            this.form.controls.applicationId.setValue(active[0].id ?? '');
+          if (!this.id) this.busy.set(false);
+        },
+        error: (error) => {
+          this.loadError.set(this.toast.message(error));
+          this.busy.set(false);
+        },
+      });
+    if (!this.id) return;
     this.api
       .schedule(this.id)
       .pipe(
@@ -259,21 +253,34 @@ export class ScheduleEditor {
       )
       .subscribe({
         next: (item) => {
-          this.form.patchValue({
-            name: item.name ?? '',
-            applicationId: item.applicationId ?? '',
-            cron: item.cron ?? '',
-            timezone: item.timezone ?? this.browserZone,
-            channel: item.channel ?? 'EMAIL',
-            recipient: item.recipient ?? '',
-            template: item.template ?? '',
-            variables: JSON.stringify(item.variables ?? {}, null, 2),
-            startAt: this.localInput(item.startAt, item.timezone),
-            endAt: this.localInput(item.endAt, item.timezone),
-          });
+          this.savedVariables = item.variables ?? {};
+          this.additionalNames = Object.keys(this.savedVariables);
+          this.form.patchValue(
+            {
+              name: item.name ?? '',
+              applicationId: item.applicationId ?? '',
+              cron: item.cron ?? '',
+              timezone: item.timezone ?? this.browserZone,
+              channel: item.channel ?? 'EMAIL',
+              recipient: item.recipient ?? '',
+              template: item.template ?? '',
+              startAt: this.localInput(item.startAt, item.timezone),
+              endAt: this.localInput(item.endAt, item.timezone),
+            },
+            { emitEvent: false },
+          );
+          this.form.controls.applicationId.updateValueAndValidity();
+          this.form.controls.channel.updateValueAndValidity();
+          const recurrence = parseRecurrence(item.cron ?? '');
+          this.recurrence.patchValue(recurrence, { emitEvent: false });
+          this.frequency.set(recurrence.frequency);
           this.nextRun.set(item.nextRunAt);
           if (this.auth.admin()) this.form.controls.applicationId.disable();
-          else this.form.disable();
+          else {
+            this.form.disable();
+            this.recurrence.disable();
+            this.variables.disable();
+          }
           this.form.markAsPristine();
         },
         error: (error) => this.loadError.set(this.toast.message(error)),
@@ -292,11 +299,63 @@ export class ScheduleEditor {
     }).format(new Date(value));
     return parts.replace(' ', 'T');
   }
+  occurrenceLabel(value: string | undefined, zone: string | undefined) {
+    if (!value) return 'Data indisponível';
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone: zone ?? this.form.controls.timezone.value,
+      weekday: 'short',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value));
+  }
   hasUnsavedChanges() {
-    return this.auth.admin() && this.form.dirty;
+    return this.auth.admin() && (this.form.dirty || this.variables.dirty);
+  }
+  selectedTemplate() {
+    return this.templates().find((template) => template.code === this.form.controls.template.value);
+  }
+  changeMessage() {
+    this.savedVariables = {};
+    this.additionalNames = [];
+    this.form.controls.template.setValue('');
+    this.names.set([]);
+    for (const name of Object.keys(this.variables.controls))
+      this.variables.removeControl(name, { emitEvent: false });
+    this.messagePreview.set(null);
+  }
+  syncVariables() {
+    const template = this.selectedTemplate();
+    if (!template) {
+      this.messagePreview.set(null);
+      return;
+    }
+    this.names.set(
+      syncMessageVariables(this.variables, template, this.savedVariables, this.additionalNames),
+    );
+    this.savedVariables = {};
+    if (!this.auth.admin()) this.variables.disable({ emitEvent: false });
+    this.messagePreview.set(
+      localPreview(template.subject ?? '', template.content ?? '', this.variables.getRawValue()),
+    );
   }
   save() {
-    if (!this.auth.admin() || this.form.invalid) return;
+    if (!this.auth.admin() || this.saving()) return;
+    this.form.markAllAsTouched();
+    this.variables.markAllAsTouched();
+    if (
+      this.form.invalid ||
+      this.variables.invalid ||
+      this.recurrenceError() ||
+      this.templatesLoading() ||
+      !this.selectedTemplate()
+    ) {
+      this.saveError.set('Confira os campos destacados e selecione um template disponível.');
+      focusInvalidField('schedule-form');
+      return;
+    }
     this.saveError.set('');
     const value = this.form.getRawValue();
     let body: ScheduleUpdate;
@@ -308,7 +367,7 @@ export class ScheduleEditor {
         channel: value.channel,
         recipient: value.recipient,
         template: value.template,
-        variables: readVariables(value.variables),
+        variables: this.variables.getRawValue(),
         startAt: value.startAt ? localDateTimeToUtc(value.startAt, value.timezone) : undefined,
         endAt: value.endAt ? localDateTimeToUtc(value.endAt, value.timezone) : undefined,
       };
@@ -334,6 +393,7 @@ export class ScheduleEditor {
       .subscribe({
         next: () => {
           this.form.markAsPristine();
+          this.variables.markAsPristine();
           this.toast.show('Agendamento salvo.');
           void this.router.navigate(['/schedules']);
         },

@@ -38,7 +38,9 @@ import { describeCron } from '../../shared/time-utils';
       <div>
         <p class="eyebrow">AUTOMAÇÃO</p>
         <h1 id="page-title" tabindex="-1">Agendamentos</h1>
-        <p class="muted">Envios recorrentes e notificações com data marcada.</p>
+        <p class="muted">
+          Programe mensagens que se repetem ou acompanhe seus envios com data marcada.
+        </p>
       </div>
       @if (auth.admin()) {
         <a mat-flat-button routerLink="/schedules/new">Novo agendamento</a>
@@ -136,6 +138,12 @@ import { describeCron } from '../../shared/time-utils';
     </section>
     <section class="panel">
       <h2>Envios agendados únicos</h2>
+      @if (auth.admin()) {
+        <p class="muted">
+          Para enviar uma mensagem apenas uma vez,
+          <a routerLink="/send">escolha a data na tela de envio</a>.
+        </p>
+      }
       @if (onceError()) {
         <app-error-state [message]="onceError()" (retry)="loadOnce()" />
       } @else if (!once()) {

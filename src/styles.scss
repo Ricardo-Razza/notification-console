@@ -213,6 +213,111 @@ main {
   grid-template-columns: 1fr 1fr;
   gap: 24px;
 }
+.composer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.composer-layout > *,
+.form-grid > * {
+  min-width: 0;
+}
+.composer-layout .form-grid {
+  align-items: start;
+}
+.preview-column {
+  position: sticky;
+  top: 24px;
+}
+.form-section {
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+.form-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.5;
+}
+.step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  font-size: 0.85rem;
+}
+.composer-layout mat-form-field {
+  margin-bottom: 10px;
+}
+.starter-panel,
+.personalization-panel {
+  padding: 18px;
+  background: var(--mat-sys-surface-container-low);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+.personalization-panel h3 {
+  margin-top: 0;
+}
+.variable-insert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.variable-insert mat-form-field {
+  flex: 1;
+  min-width: 170px;
+}
+.variable-insert button {
+  margin-top: 8px;
+}
+.advanced-options {
+  padding: 16px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
+}
+.advanced-options summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.advanced-options[open] summary {
+  margin-bottom: 20px;
+}
+.review-list {
+  display: grid;
+  gap: 6px;
+}
+.review-list dt {
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+.review-list dd {
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+.message-preview h3 {
+  overflow-wrap: anywhere;
+}
+.occurrence-list {
+  padding-left: 24px;
+}
+.occurrence-list li {
+  padding-left: 8px;
+}
+.success-panel {
+  max-width: 720px;
+}
+.composer-submit {
+  grid-column: 1 / -1;
+}
 .filters {
   display: flex;
   gap: 14px;
@@ -413,6 +518,12 @@ pre {
   }
   .two-column {
     grid-template-columns: 1fr;
+  }
+  .composer-layout {
+    grid-template-columns: 1fr;
+  }
+  .preview-column {
+    position: static;
   }
   .panel {
     padding: 18px;

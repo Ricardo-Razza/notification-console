@@ -1,0 +1,240 @@
+<header class="page-header">
+  <div>
+    <p class="eyebrow">NOVO ENVIO</p>
+    <h1 id="page-title" tabindex="-1">Enviar notificação</h1>
+    <p class="muted">Escolha a mensagem, preencha os dados e confira a prévia antes de enviar.</p>
+  </div>
+</header>
+@if (loadError()) {
+  <app-error-state [message]="loadError()" (retry)="load()" />
+} @else if (loading()) {
+  <app-loading />
+} @else if (result(); as value) {
+  <section class="panel success-panel" role="status">
+    <p class="eyebrow">PEDIDO REGISTRADO</p>
+    <h2>Notificação registrada</h2>
+    <app-status-badge [status]="value.status ?? 'PENDING'" />
+    <p>Acompanhe o processamento e o histórico na página da notificação.</p>
+    <div class="actions">
+      <a mat-flat-button [routerLink]="['/notifications', value.id]">Acompanhar notificação</a>
+      <button mat-button (click)="another()">Enviar outra</button>
+    </div>
+  </section>
+} @else if (!activeApps().length) {
+  <section class="panel">
+    <h2>Você precisa de uma aplicação ativa</h2>
+    <p>Crie ou ative a aplicação que identifica qual sistema está enviando as mensagens.</p>
+    <a mat-flat-button routerLink="/applications">Ir para aplicações</a>
+  </section>
+} @else {
+  <div class="composer-layout">
+    <section class="panel">
+      <form id="send-form" [formGroup]="form" (ngSubmit)="send()">
+        <section class="form-section" aria-labelledby="send-message-title">
+          <h2 id="send-message-title">
+            <span class="step-number" aria-hidden="true">1</span> Escolha a mensagem
+          </h2>
+          <p class="muted">Selecione o sistema e o modelo de mensagem que deseja usar.</p>
+          <div class="form-grid">
+            <mat-form-field
+              ><mat-label>Aplicação</mat-label
+              ><mat-select formControlName="applicationId">
+                @for (app of apps(); track app.id) {
+                  <mat-option [value]="app.id" [disabled]="!app.active"
+                    >{{ app.name }}{{ !app.active ? ' (inativa)' : '' }}</mat-option
+                  >
+                }</mat-select
+              ><mat-error>Selecione uma aplicação ativa.</mat-error></mat-form-field
+            >
+            <mat-form-field
+              ><mat-label>Canal</mat-label
+              ><mat-select formControlName="channel">
+                <mat-option value="EMAIL">E-mail</mat-option><mat-option value="SMS">SMS</mat-option
+                ><mat-option value="PUSH">Push</mat-option>
+              </mat-select></mat-form-field
+            >
+          </div>
+          <mat-form-field
+            ><mat-label>Template</mat-label>
+            <mat-select formControlName="template">
+              @for (template of templates(); track template.id) {
+                <mat-option [value]="template.code">{{ template.code }}</mat-option>
+              }</mat-select
+            ><mat-hint
+              >Um template é o modelo da mensagem; os dados pessoais são preenchidos
+              abaixo.</mat-hint
+            >
+            <mat-error>Selecione um template.</mat-error></mat-form-field
+          >
+          @if (templatesLoading()) {
+            <p class="muted" role="status">Buscando modelos disponíveis…</p>
+          }
+          @if (templateError()) {
+            <p class="form-error" role="alert">{{ templateError() }}</p>
+            <button
+              mat-button
+              type="button"
+              (click)="form.controls.applicationId.updateValueAndValidity()"
+            >
+              Tentar novamente
+            </button>
+          }
+          @if (
+            form.controls.applicationId.value &&
+            !templatesLoading() &&
+            !templateError() &&
+            !templates().length
+          ) {
+            <div class="form-note">
+              <p>Nenhum modelo disponível para esta aplicação e canal.</p>
+              <a mat-button routerLink="/templates/new">Criar template</a>
+            </div>
+          }
+        </section>
+        <section class="form-section" aria-labelledby="send-data-title">
+          <h2 id="send-data-title">
+            <span class="step-number" aria-hidden="true">2</span> Para quem e com quais dados?
+          </h2>
+          <mat-form-field
+            ><mat-label>Destinatário</mat-label>
+            <input
+              matInput
+              formControlName="recipient"
+              maxlength="255"
+              [type]="form.controls.channel.value === 'EMAIL' ? 'email' : 'text'"
+              [placeholder]="
+                form.controls.channel.value === 'EMAIL'
+                  ? 'Ex.: maria@exemplo.com'
+                  : 'Identificação do destinatário'
+              "
+            />
+            <mat-hint>{{
+              form.controls.channel.value === 'EMAIL'
+                ? 'Endereço de e-mail de quem receberá a mensagem.'
+                : 'Informe o destinatário para o canal selecionado.'
+            }}</mat-hint>
+            <mat-error>Informe um destinatário válido.</mat-error></mat-form-field
+          >
+          @if (selectedTemplate()) {
+            @if (names().length) {
+              <p class="muted">Complete os dados que serão inseridos na mensagem.</p>
+            } @else {
+              <p class="muted">Este modelo já está pronto. Nenhum dado adicional é necessário.</p>
+            }
+            <div [formGroup]="variables" class="form-grid">
+              @for (name of names(); track name) {
+                <mat-form-field
+                  ><mat-label>{{ fieldLabel(name) }}</mat-label
+                  ><input
+                    matInput
+                    [formControlName]="name"
+                    maxlength="2000"
+                    [placeholder]="fieldExample(name)"
+                  />
+                  <mat-error>Preencha este dado da mensagem.</mat-error></mat-form-field
+                >
+              }
+            </div>
+          }
+        </section>
+        <section class="form-section" aria-labelledby="send-time-title">
+          <h2 id="send-time-title">
+            <span class="step-number" aria-hidden="true">3</span> Quando enviar?
+          </h2>
+          <mat-form-field
+            ><mat-label>Momento do envio</mat-label
+            ><mat-select [value]="delivery()" (selectionChange)="setDelivery($event.value)">
+              <mat-option value="now">Enviar agora</mat-option
+              ><mat-option value="later">Agendar para uma data</mat-option>
+            </mat-select></mat-form-field
+          >
+          @if (delivery() === 'later') {
+            <mat-form-field
+              ><mat-label>Data e hora do envio</mat-label
+              ><input matInput type="datetime-local" formControlName="scheduledAt" />
+              <mat-hint>Horário em {{ form.controls.timezone.value }}.</mat-hint
+              ><mat-error>Escolha a data e hora.</mat-error></mat-form-field
+            >
+          }
+          <details class="advanced-options">
+            <summary>Opções avançadas</summary>
+            @if (delivery() === 'later') {
+              <mat-form-field
+                ><mat-label>Fuso da data marcada</mat-label
+                ><mat-select formControlName="timezone">
+                  @for (zone of zones; track zone) {
+                    <mat-option [value]="zone">{{ zone }}</mat-option>
+                  }
+                </mat-select></mat-form-field
+              >
+            }
+            <mat-form-field
+              ><mat-label>Identificador para evitar duplicidade (opcional)</mat-label
+              ><input matInput formControlName="idempotencyKey" maxlength="255" />
+              <mat-hint
+                >Deixe vazio no uso normal. Repita um identificador somente para o mesmo
+                pedido.</mat-hint
+              ></mat-form-field
+            >
+          </details>
+        </section>
+      </form>
+    </section>
+    <aside class="preview-column" aria-label="Conferência do envio">
+      <section class="panel">
+        <p class="eyebrow">CONFIRA ANTES DE ENVIAR</p>
+        <h2>Resumo do envio</h2>
+        <dl class="review-list">
+          <dt>Aplicação</dt>
+          <dd>{{ summary().application || 'Selecione a aplicação' }}</dd>
+          <dt>Destinatário</dt>
+          <dd>{{ summary().recipient || 'Preencha o destinatário' }}</dd>
+          <dt>Modelo</dt>
+          <dd>{{ summary().template || 'Selecione o template' }}</dd>
+          <dt>Quando</dt>
+          <dd>{{ summary().when }}</dd>
+        </dl>
+      </section>
+      <section class="panel message-preview">
+        <h2>Prévia da mensagem</h2>
+        @if (previewError()) {
+          <p class="form-error" role="alert">{{ previewError() }}</p>
+        }
+        @if (preview(); as value) {
+          @if (value.missingVariables?.length) {
+            <p class="form-note">Preencha os dados da mensagem para completar a prévia.</p>
+          }
+          @if (value.subject) {
+            <h3>{{ value.subject }}</h3>
+          }
+          <pre>{{ value.content }}</pre>
+        } @else {
+          <p class="muted">A mensagem aparecerá aqui assim que você escolher um template.</p>
+        }
+      </section>
+    </aside>
+    <section class="panel composer-submit" aria-label="Finalizar envio">
+      @if (error()) {
+        <p role="alert" class="form-error">{{ error() }}</p>
+      }
+      @if (externalRecipient() && form.controls.channel.value === 'EMAIL') {
+        <p>
+          O envio será feito para <strong>{{ form.controls.recipient.value }}</strong
+          >. Confira o endereço e a prévia.
+        </p>
+      } @else {
+        <p class="muted">Confira os dados e a prévia da mensagem antes de continuar.</p>
+      }
+      <button
+        mat-flat-button
+        type="submit"
+        form="send-form"
+        [disabled]="busy() || templatesLoading() || !!templateError()"
+      >
+        {{
+          busy() ? 'Registrando…' : delivery() === 'later' ? 'Agendar envio' : 'Enviar notificação'
+        }}
+      </button>
+    </section>
+  </div>
+}

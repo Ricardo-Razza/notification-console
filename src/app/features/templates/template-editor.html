@@ -1,0 +1,232 @@
+<header class="page-header">
+  <div>
+    <p class="eyebrow">CONTEÚDO</p>
+    <h1 id="page-title" tabindex="-1">{{ id ? 'Template' : 'Novo template' }}</h1>
+    <p class="muted">
+      Um template é um modelo reutilizável de mensagem. Escreva uma vez e personalize em cada envio.
+    </p>
+  </div>
+  <a mat-button routerLink="/templates">Voltar</a>
+</header>
+@if (busy()) {
+  <app-loading />
+} @else if (loadError()) {
+  <app-error-state [message]="loadError()" (retry)="load()" />
+} @else {
+  <div class="composer-layout">
+    <section class="panel">
+      <form id="template-form" [formGroup]="form" (ngSubmit)="save()">
+        @if (auth.admin() && !id && !form.controls.content.value) {
+          <section class="starter-panel">
+            <h2>Comece com um exemplo</h2>
+            <p class="muted">
+              Escolha uma sugestão e adapte o texto. Você também pode escrever do zero.
+            </p>
+            <div class="actions">
+              @for (starter of starters; track starter.code; let index = $index) {
+                <button mat-stroked-button type="button" (click)="useStarter(index)">
+                  {{ starter.label }}
+                </button>
+              }
+            </div>
+          </section>
+        }
+        <section class="form-section" aria-labelledby="template-identity-title">
+          <h2 id="template-identity-title">
+            <span class="step-number" aria-hidden="true">1</span> Identifique o modelo
+          </h2>
+          <div class="form-grid">
+            <mat-form-field
+              ><mat-label>Identificador do template</mat-label
+              ><input
+                matInput
+                formControlName="code"
+                maxlength="100"
+                placeholder="Ex.: BOAS_VINDAS"
+                (blur)="normalizeCode()"
+              />
+              <mat-hint
+                >Use um nome curto. Espaços e acentos serão ajustados automaticamente.</mat-hint
+              >
+              <mat-error>{{
+                fieldError('code') || 'Informe um identificador com letras, números e sublinhado.'
+              }}</mat-error></mat-form-field
+            >
+            <mat-form-field
+              ><mat-label>Canal</mat-label
+              ><mat-select formControlName="channel">
+                <mat-option value="EMAIL">E-mail</mat-option><mat-option value="SMS">SMS</mat-option
+                ><mat-option value="PUSH">Push</mat-option>
+              </mat-select></mat-form-field
+            >
+          </div>
+          <mat-form-field
+            ><mat-label>Disponível para</mat-label
+            ><mat-select formControlName="applicationId"
+              ><mat-option value="">Todas as aplicações</mat-option>
+              @for (app of apps(); track app.id) {
+                <mat-option [value]="app.id">{{ app.name }}</mat-option>
+              }</mat-select
+            ><mat-hint
+              >Escolha uma aplicação para uso exclusivo ou deixe disponível para todas.</mat-hint
+            ></mat-form-field
+          >
+        </section>
+        <section class="form-section" aria-labelledby="template-content-title">
+          <h2 id="template-content-title">
+            <span class="step-number" aria-hidden="true">2</span> Escreva a mensagem
+          </h2>
+          @if (form.controls.channel.value !== 'SMS') {
+            <mat-form-field
+              ><mat-label>{{
+                form.controls.channel.value === 'EMAIL' ? 'Assunto do e-mail' : 'Título (opcional)'
+              }}</mat-label>
+              <input
+                matInput
+                #subjectInput
+                formControlName="subject"
+                maxlength="255"
+                placeholder="Ex.: Boas-vindas!"
+                (focus)="rememberCursor('subject', subjectInput)"
+                (click)="rememberCursor('subject', subjectInput)"
+                (keyup)="rememberCursor('subject', subjectInput)"
+                (select)="rememberCursor('subject', subjectInput)"
+              />
+              <mat-error>{{
+                fieldError('subject') || 'Informe o assunto do e-mail.'
+              }}</mat-error></mat-form-field
+            >
+          }
+          <mat-form-field
+            ><mat-label>Mensagem</mat-label
+            ><textarea
+              matInput
+              #contentInput
+              formControlName="content"
+              rows="9"
+              maxlength="50000"
+              placeholder="Escreva aqui o texto que o destinatário receberá."
+              (focus)="rememberCursor('content', contentInput)"
+              (click)="rememberCursor('content', contentInput)"
+              (keyup)="rememberCursor('content', contentInput)"
+              (select)="rememberCursor('content', contentInput)"
+            ></textarea>
+            <mat-hint align="end">{{ form.controls.content.value.length }} / 50.000</mat-hint
+            ><mat-error>{{
+              fieldError('content') || 'Escreva a mensagem.'
+            }}</mat-error></mat-form-field
+          >
+          @if (auth.admin()) {
+            <div class="personalization-panel">
+              <h3>Quer personalizar a mensagem?</h3>
+              <p class="muted">
+                Adicione um dado como “nome”. Em cada envio, você preenche o valor e ele aparece no
+                lugar da marcação.
+              </p>
+              <div class="variable-insert">
+                <mat-form-field [hideRequiredMarker]="true"
+                  ><mat-label>Nome do dado personalizado</mat-label
+                  ><input
+                    matInput
+                    [formControl]="variableName"
+                    maxlength="64"
+                    placeholder="Ex.: nome"
+                  />
+                  <mat-error
+                    >Use até 64 letras, números ou sublinhados, sem espaços.</mat-error
+                  ></mat-form-field
+                >
+                <button mat-stroked-button type="button" (click)="insertVariable()">
+                  Inserir dado
+                </button>
+              </div>
+              <p class="muted">
+                Será inserido no
+                {{ insertionField() === 'subject' ? 'assunto' : 'texto da mensagem' }}, na última
+                posição selecionada.
+              </p>
+              <div class="actions">
+                <button mat-button type="button" (click)="insertVariable('today')">
+                  Inserir data atual
+                </button>
+                <button mat-button type="button" (click)="insertVariable('now')">
+                  Inserir data e hora atuais
+                </button>
+              </div>
+              <small class="muted"
+                >Data e hora atuais são preenchidas automaticamente a cada execução, em UTC.</small
+              >
+            </div>
+          }
+        </section>
+      </form>
+    </section>
+    <aside class="preview-column" aria-label="Conferência do template">
+      <section class="panel">
+        <p class="eyebrow">TESTE ANTES DE SALVAR</p>
+        <h2>Dados de exemplo</h2>
+        <p class="muted">
+          Estes valores servem só para conferir a prévia. Você preencherá os dados reais na hora de
+          enviar.
+        </p>
+        <form [formGroup]="examples">
+          @for (name of names(); track name) {
+            @if (name !== 'today' && name !== 'now') {
+              <mat-form-field
+                ><mat-label>Exemplo: {{ fieldLabel(name) }}</mat-label
+                ><input
+                  matInput
+                  [formControlName]="name"
+                  maxlength="2000"
+                  [placeholder]="fieldExample(name)"
+              /></mat-form-field>
+            } @else {
+              <p class="muted">
+                {{ name === 'today' ? 'Data atual' : 'Data e hora atuais' }}: preenchimento
+                automático.
+              </p>
+            }
+          }
+        </form>
+        @if (!names().length) {
+          <p class="muted">
+            Nenhum dado personalizado na mensagem. Você pode enviar o texto como está.
+          </p>
+        }
+      </section>
+      <section class="panel message-preview">
+        <h2>Prévia da mensagem</h2>
+        @if (previewError()) {
+          <p role="alert" class="form-error">{{ previewError() }}</p>
+        }
+        @if (preview(); as result) {
+          @if (result.missingVariables?.length) {
+            <p class="form-note" role="status">
+              Preencha os dados de exemplo para completar a prévia.
+            </p>
+          }
+          @if (result.subject) {
+            <h3>{{ result.subject }}</h3>
+          }
+          <pre>{{ result.content }}</pre>
+        } @else {
+          <p class="muted">Comece a escrever para ver como a mensagem ficará.</p>
+        }
+      </section>
+    </aside>
+    @if (auth.admin()) {
+      <section class="panel composer-submit" aria-label="Finalizar template">
+        <p class="muted">Confira a prévia. Os dados de exemplo não serão salvos nem enviados.</p>
+        @if (saveError()) {
+          <p role="alert" class="form-error">{{ saveError() }}</p>
+        }
+        <div class="actions">
+          <button mat-flat-button type="submit" form="template-form" [disabled]="saving()">
+            {{ saving() ? 'Salvando…' : 'Salvar template' }}
+          </button>
+          <a mat-button routerLink="/templates">Cancelar</a>
+        </div>
+      </section>
+    }
+  </div>
+}

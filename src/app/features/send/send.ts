@@ -6,7 +6,6 @@ import {
   signal,
   computed,
 } from '@angular/core';
-import { HttpParams } from '@angular/common/http';
 import {
   FormBuilder,
   ReactiveFormsModule,
@@ -16,19 +15,29 @@ import {
 } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatFormFieldModule, MAT_FORM_FIELD_DEFAULT_OPTIONS } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatInputModule } from '@angular/material/input';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { forkJoin, switchMap, of, catchError, debounceTime, merge, finalize } from 'rxjs';
+import { switchMap, of, catchError, debounceTime, merge, finalize } from 'rxjs';
 import { ConsoleApi } from '../../core/api/console-api';
 import type { Application, Template, Channel, Preview, SendResult } from '../../core/api/models';
 import { Toast } from '../../shared/toast';
 import { ErrorState, Loading } from '../../shared/states';
-import { detectVariables } from '../../shared/template-utils';
+import {
+  visibleTemplates,
+  syncMessageVariables,
+  messageFieldLabel,
+  messageFieldExample,
+  focusInvalidField,
+} from '../../shared/message-utils';
+import { StatusBadge } from '../../shared/status-badge';
 import { timeZones, localDateTimeToUtc } from '../../shared/time-utils';
 @Component({
   selector: 'app-send',
+  providers: [
+    { provide: MAT_FORM_FIELD_DEFAULT_OPTIONS, useValue: { subscriptSizing: 'dynamic' } },
+  ],
   imports: [
     ReactiveFormsModule,
     RouterLink,
@@ -38,134 +47,17 @@ import { timeZones, localDateTimeToUtc } from '../../shared/time-utils';
     MatInputModule,
     ErrorState,
     Loading,
+    StatusBadge,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<header class="page-header">
-      <div>
-        <p class="eyebrow">NOVO ENVIO</p>
-        <h1 id="page-title" tabindex="-1">Enviar notificação</h1>
-        <p class="muted">Envie em nome de uma aplicação e acompanhe o resultado.</p>
-      </div>
-    </header>
-    @if (loadError()) {
-      <app-error-state [message]="loadError()" (retry)="load()" />
-    } @else if (loading()) {
-      <app-loading />
-    } @else if (result(); as value) {
-      <section class="panel" role="status">
-        <h2>Notificação registrada</h2>
-        <p>O envio foi registrado com status {{ value.status }}.</p>
-        <a mat-flat-button [routerLink]="['/notifications', value.id]">Acompanhar notificação</a
-        ><button mat-button (click)="another()">Enviar outra</button>
-      </section>
-    } @else {
-      <div class="two-column">
-        <section class="panel">
-          <form [formGroup]="form" (ngSubmit)="send()">
-            <mat-form-field
-              ><mat-label>Aplicação</mat-label
-              ><mat-select formControlName="applicationId">
-                @for (app of apps(); track app.id) {
-                  <mat-option [value]="app.id" [disabled]="!app.active"
-                    >{{ app.name }}{{ !app.active ? ' (inativa)' : '' }}</mat-option
-                  >
-                }</mat-select
-              ><mat-error>Selecione uma aplicação.</mat-error></mat-form-field
-            ><mat-form-field
-              ><mat-label>Canal</mat-label
-              ><mat-select formControlName="channel"
-                ><mat-option value="EMAIL">E-mail</mat-option
-                ><mat-option value="SMS">SMS</mat-option
-                ><mat-option value="PUSH">Push</mat-option></mat-select
-              ></mat-form-field
-            >
-            <mat-form-field
-              ><mat-label>Template</mat-label
-              ><mat-select formControlName="template">
-                @for (template of templates(); track template.id) {
-                  <mat-option [value]="template.code"
-                    >{{ template.code }} {{ template.applicationId ? '' : '(global)' }}</mat-option
-                  >
-                }</mat-select
-              ><mat-error>Selecione um template.</mat-error></mat-form-field
-            >
-            @if (templateError()) {
-              <p class="form-error" role="alert">{{ templateError() }}</p>
-            }
-            <mat-form-field
-              ><mat-label>Destinatário</mat-label
-              ><input matInput formControlName="recipient" maxlength="255" /><mat-error
-                >Informe um destinatário válido.</mat-error
-              ></mat-form-field
-            >
-            @if (externalRecipient()) {
-              <p class="form-note">
-                Isto enviará um e-mail de verdade. Confira o destinatário antes de enviar.
-              </p>
-            }
-            <div [formGroup]="variables">
-              @for (name of names(); track name) {
-                <mat-form-field
-                  ><mat-label>Variável: {{ name }}</mat-label
-                  ><input matInput [formControlName]="name" maxlength="2000" /><mat-error
-                    >Informe o valor desta variável.</mat-error
-                  ></mat-form-field
-                >
-              }
-            </div>
-            <mat-form-field
-              ><mat-label>Data e hora opcionais</mat-label
-              ><input
-                matInput
-                type="datetime-local"
-                formControlName="scheduledAt" /></mat-form-field
-            ><mat-form-field
-              ><mat-label>Fuso da data marcada</mat-label
-              ><mat-select formControlName="timezone">
-                @for (zone of zones; track zone) {
-                  <mat-option [value]="zone">{{ zone }}</mat-option>
-                }
-              </mat-select></mat-form-field
-            ><mat-form-field
-              ><mat-label>Chave de idempotência opcional</mat-label
-              ><input matInput formControlName="idempotencyKey" maxlength="255" /><mat-hint
-                >Use a mesma chave para repetir o mesmo pedido com segurança.</mat-hint
-              ></mat-form-field
-            >
-            @if (error()) {
-              <p role="alert" class="form-error">{{ error() }}</p>
-            }
-            <button
-              mat-flat-button
-              [disabled]="form.invalid || variables.invalid || busy() || !!templateError()"
-            >
-              {{ busy() ? 'Registrando…' : 'Enviar notificação' }}
-            </button>
-          </form>
-        </section>
-        <section class="panel">
-          <h2>Prévia</h2>
-          @if (previewError()) {
-            <p class="form-error" role="alert">{{ previewError() }}</p>
-          }
-          @if (preview(); as value) {
-            @if (value.missingVariables?.length) {
-              <p class="form-note">Faltam valores: {{ value.missingVariables.join(', ') }}</p>
-            }
-            <h3>{{ value.subject }}</h3>
-            <pre>{{ value.content }}</pre>
-          } @else {
-            <p class="muted">Selecione uma aplicação e um template.</p>
-          }
-        </section>
-      </div>
-    }`,
+  templateUrl: './send.html',
 })
 export class Send {
   private readonly api = inject(ConsoleApi);
   private readonly destroy = inject(DestroyRef);
   private readonly toast = inject(Toast);
   readonly apps = signal<Application[]>([]);
+  readonly activeApps = computed(() => this.apps().filter((app) => app.active));
   readonly templates = signal<Template[]>([]);
   readonly names = signal<string[]>([]);
   readonly preview = signal<Preview | null>(null);
@@ -176,6 +68,11 @@ export class Send {
   readonly previewError = signal('');
   readonly error = signal('');
   readonly busy = signal(false);
+  readonly templatesLoading = signal(false);
+  readonly delivery = signal<'now' | 'later'>('now');
+  readonly fieldLabel = messageFieldLabel;
+  readonly fieldExample = messageFieldExample;
+  readonly summary = signal({ application: '', recipient: '', template: '', when: 'Agora' });
   readonly zones = timeZones();
   readonly recipient = signal('');
   readonly externalRecipient = computed(() => {
@@ -185,7 +82,7 @@ export class Send {
   readonly form = inject(FormBuilder).nonNullable.group({
     applicationId: ['', Validators.required],
     channel: ['EMAIL' as Channel, Validators.required],
-    template: ['', Validators.required],
+    template: [{ value: '', disabled: true }, Validators.required],
     recipient: ['', [Validators.required, Validators.email, Validators.maxLength(255)]],
     scheduledAt: [''],
     timezone: [Intl.DateTimeFormat().resolvedOptions().timeZone],
@@ -193,33 +90,18 @@ export class Send {
   });
   readonly variables = new FormRecord<FormControl<string>>({});
   constructor() {
-    this.load();
     merge(this.form.controls.applicationId.valueChanges, this.form.controls.channel.valueChanges)
       .pipe(
         switchMap(() => {
           const value = this.form.getRawValue();
           this.templateError.set('');
+          this.templates.set([]);
+          this.form.controls.template.disable({ emitEvent: false });
+          this.preview.set(null);
+          this.form.controls.template.setValue('');
+          this.templatesLoading.set(!!value.applicationId);
           if (!value.applicationId) return of([] as Template[]);
-          return forkJoin([
-            this.api.templates(
-              new HttpParams()
-                .set('scope', 'GLOBAL')
-                .set('channel', value.channel)
-                .set('size', 100),
-            ),
-            this.api.templates(
-              new HttpParams()
-                .set('applicationId', value.applicationId)
-                .set('channel', value.channel)
-                .set('size', 100),
-            ),
-          ]).pipe(
-            switchMap(([global, own]) => {
-              const visible = new Map<string, Template>();
-              for (const item of [...(global.items ?? []), ...(own.items ?? [])])
-                if (item.code) visible.set(item.code, item);
-              return of([...visible.values()]);
-            }),
+          return visibleTemplates(this.api, value.applicationId, value.channel).pipe(
             catchError((error) => {
               this.templateError.set(this.toast.message(error));
               return of([] as Template[]);
@@ -229,8 +111,10 @@ export class Send {
         takeUntilDestroyed(this.destroy),
       )
       .subscribe((templates) => {
+        this.templatesLoading.set(false);
         this.templates.set(templates);
-        this.form.controls.template.setValue('');
+        if (templates.length) this.form.controls.template.enable({ emitEvent: false });
+        if (templates.length === 1) this.form.controls.template.setValue(templates[0].code ?? '');
       });
     this.form.controls.template.valueChanges
       .pipe(takeUntilDestroyed(this.destroy))
@@ -271,6 +155,10 @@ export class Send {
         takeUntilDestroyed(this.destroy),
       )
       .subscribe((preview) => this.preview.set(preview));
+    this.form.valueChanges
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe(() => this.updateSummary());
+    this.load();
   }
   load() {
     this.loading.set(true);
@@ -282,7 +170,12 @@ export class Send {
         takeUntilDestroyed(this.destroy),
       )
       .subscribe({
-        next: (apps) => this.apps.set(apps),
+        next: (apps) => {
+          this.apps.set(apps);
+          const active = apps.filter((app) => app.active);
+          if (!this.form.controls.applicationId.value && active.length === 1)
+            this.form.controls.applicationId.setValue(active[0].id ?? '');
+        },
         error: (error) => this.loadError.set(this.toast.message(error)),
       });
   }
@@ -290,26 +183,43 @@ export class Send {
     return this.templates().find((item) => item.code === this.form.controls.template.value);
   }
   syncVariables() {
-    const template = this.selectedTemplate();
-    const names = detectVariables(template?.subject ?? '', template?.content ?? '').filter(
-      (name) => name !== 'today' && name !== 'now',
-    );
-    this.names.set(names);
-    for (const name of Object.keys(this.variables.controls))
-      if (!names.includes(name)) this.variables.removeControl(name, { emitEvent: false });
-    for (const name of names)
-      if (!this.variables.contains(name))
-        this.variables.addControl(
-          name,
-          new FormControl('', {
-            nonNullable: true,
-            validators: [Validators.required, Validators.maxLength(2000)],
-          }),
-          { emitEvent: false },
-        );
+    this.names.set(syncMessageVariables(this.variables, this.selectedTemplate()));
+  }
+  setDelivery(value: 'now' | 'later') {
+    this.delivery.set(value);
+    if (value === 'now') this.form.controls.scheduledAt.setValue('');
+    this.form.controls.scheduledAt.setValidators(value === 'later' ? Validators.required : []);
+    this.form.controls.scheduledAt.updateValueAndValidity();
+  }
+  updateSummary() {
+    const value = this.form.getRawValue();
+    this.summary.set({
+      application: this.apps().find((app) => app.id === value.applicationId)?.name ?? '',
+      recipient: value.recipient,
+      template: value.template,
+      when:
+        this.delivery() === 'later'
+          ? (value.scheduledAt.replace(/^(\d{4})-(\d{2})-(\d{2})T/, '$3/$2/$1 às ') ||
+              'Escolha a data') +
+            ' · ' +
+            value.timezone
+          : 'Agora',
+    });
   }
   send() {
-    if (this.form.invalid || this.variables.invalid || this.busy()) return;
+    this.form.markAllAsTouched();
+    this.variables.markAllAsTouched();
+    if (
+      this.form.invalid ||
+      this.variables.invalid ||
+      this.busy() ||
+      this.templatesLoading() ||
+      !this.selectedTemplate()
+    ) {
+      this.error.set('Confira os campos destacados antes de enviar.');
+      focusInvalidField('send-form');
+      return;
+    }
     this.error.set('');
     const value = this.form.getRawValue();
     let scheduledAt: string | undefined;
@@ -345,8 +255,11 @@ export class Send {
   }
   another() {
     this.result.set(null);
+    this.setDelivery('now');
     this.form.patchValue({ recipient: '', scheduledAt: '', idempotencyKey: '' });
     for (const control of Object.values(this.variables.controls)) control.reset('');
+    this.form.markAsUntouched();
+    this.form.markAsPristine();
     this.error.set('');
   }
 }

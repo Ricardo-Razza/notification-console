@@ -1,0 +1,327 @@
+<header class="page-header">
+  <div>
+    <p class="eyebrow">AUTOMAÇÃO</p>
+    <h1 id="page-title" tabindex="-1">{{ id ? 'Agendamento' : 'Novo agendamento' }}</h1>
+    <p class="muted">Programe uma mensagem para se repetir nos dias e horários escolhidos.</p>
+  </div>
+  <a mat-button routerLink="/schedules">Voltar</a>
+</header>
+@if (busy()) {
+  <app-loading />
+} @else if (loadError()) {
+  <app-error-state [message]="loadError()" (retry)="load()" />
+} @else if (!activeApps().length && !id) {
+  <section class="panel">
+    <h2>Você precisa de uma aplicação ativa</h2>
+    <p>Crie ou ative a aplicação que será usada para enviar as mensagens.</p>
+    <a mat-flat-button routerLink="/applications">Ir para aplicações</a>
+  </section>
+} @else {
+  <div class="composer-layout">
+    <section class="panel">
+      <form id="schedule-form" [formGroup]="form" (ngSubmit)="save()">
+        <section class="form-section" aria-labelledby="schedule-message-title">
+          <h2 id="schedule-message-title">
+            <span class="step-number" aria-hidden="true">1</span> Identifique e escolha a mensagem
+          </h2>
+          <mat-form-field
+            ><mat-label>Nome do agendamento</mat-label
+            ><input
+              matInput
+              formControlName="name"
+              maxlength="100"
+              placeholder="Ex.: Lembrete semanal para clientes"
+            />
+            <mat-hint>Um nome para você encontrar este agendamento depois.</mat-hint
+            ><mat-error>Informe um nome.</mat-error></mat-form-field
+          >
+          <div class="form-grid">
+            <mat-form-field
+              ><mat-label>Aplicação</mat-label
+              ><mat-select formControlName="applicationId" (selectionChange)="changeMessage()">
+                @for (app of apps(); track app.id) {
+                  <mat-option [value]="app.id" [disabled]="!app.active"
+                    >{{ app.name }}{{ !app.active ? ' (inativa)' : '' }}</mat-option
+                  >
+                }</mat-select
+              ><mat-error>Selecione uma aplicação ativa.</mat-error></mat-form-field
+            >
+            <mat-form-field
+              ><mat-label>Canal</mat-label
+              ><mat-select formControlName="channel" (selectionChange)="changeMessage()">
+                <mat-option value="EMAIL">E-mail</mat-option><mat-option value="SMS">SMS</mat-option
+                ><mat-option value="PUSH">Push</mat-option>
+              </mat-select></mat-form-field
+            >
+          </div>
+          <mat-form-field
+            ><mat-label>Template</mat-label
+            ><mat-select formControlName="template">
+              @for (template of templates(); track template.id) {
+                <mat-option [value]="template.code">{{ template.code }}</mat-option>
+              }
+              @if (form.controls.template.value && !selectedTemplate()) {
+                <mat-option [value]="form.controls.template.value"
+                  >{{ form.controls.template.value }} (indisponível)</mat-option
+                >
+              }</mat-select
+            ><mat-hint
+              >Escolha o modelo da mensagem. Os dados para preenchê-lo aparecem abaixo.</mat-hint
+            ><mat-error>Selecione um template.</mat-error></mat-form-field
+          >
+          @if (templatesLoading()) {
+            <p class="muted" role="status">Buscando modelos disponíveis…</p>
+          }
+          @if (templateError()) {
+            <p class="form-error" role="alert">{{ templateError() }}</p>
+            <button
+              mat-button
+              type="button"
+              (click)="form.controls.applicationId.updateValueAndValidity()"
+            >
+              Tentar novamente
+            </button>
+          }
+          @if (
+            form.controls.applicationId.value &&
+            !templatesLoading() &&
+            !templateError() &&
+            !templates().length
+          ) {
+            <p class="form-note">
+              Nenhum template disponível para esta aplicação e canal.
+              @if (auth.admin()) {
+                <a routerLink="/templates/new">Criar template</a>
+              }
+            </p>
+          }
+          @if (!templatesLoading() && form.controls.template.value && !selectedTemplate()) {
+            <p class="form-error" role="alert">
+              O modelo salvo não está disponível. Selecione outro template para salvar.
+            </p>
+          }
+        </section>
+        <section class="form-section" aria-labelledby="schedule-data-title">
+          <h2 id="schedule-data-title">
+            <span class="step-number" aria-hidden="true">2</span> Preencha o destinatário e os dados
+          </h2>
+          <mat-form-field
+            ><mat-label>Destinatário</mat-label
+            ><input
+              matInput
+              formControlName="recipient"
+              maxlength="255"
+              [type]="form.controls.channel.value === 'EMAIL' ? 'email' : 'text'"
+              [placeholder]="
+                form.controls.channel.value === 'EMAIL'
+                  ? 'Ex.: maria@exemplo.com'
+                  : 'Identificação do destinatário'
+              "
+            />
+            <mat-hint>Esta pessoa receberá a mensagem em cada execução.</mat-hint
+            ><mat-error>Informe um destinatário válido.</mat-error></mat-form-field
+          >
+          @if (selectedTemplate()) {
+            <p class="muted">
+              {{
+                names().length
+                  ? 'Complete os dados que aparecerão na mensagem. Eles serão usados em todas as repetições.'
+                  : 'Este modelo não precisa de dados adicionais.'
+              }}
+            </p>
+            <div [formGroup]="variables" class="form-grid">
+              @for (name of names(); track name) {
+                <mat-form-field
+                  ><mat-label>{{ fieldLabel(name) }}</mat-label
+                  ><input
+                    matInput
+                    [formControlName]="name"
+                    maxlength="2000"
+                    [placeholder]="fieldExample(name)"
+                  />
+                  <mat-error>Preencha este dado da mensagem.</mat-error></mat-form-field
+                >
+              }
+            </div>
+          }
+        </section>
+        <section class="form-section" aria-labelledby="schedule-time-title">
+          <h2 id="schedule-time-title">
+            <span class="step-number" aria-hidden="true">3</span> Escolha quando repetir
+          </h2>
+          <div [formGroup]="recurrence">
+            <mat-form-field
+              ><mat-label>Repetir</mat-label
+              ><mat-select formControlName="frequency">
+                <mat-option value="daily">Todos os dias</mat-option
+                ><mat-option value="weekdays">De segunda a sexta</mat-option>
+                <mat-option value="weekly">Uma vez por semana</mat-option
+                ><mat-option value="monthly">Uma vez por mês</mat-option>
+                <mat-option value="hourly">A cada hora</mat-option
+                ><mat-option value="custom">Personalizado (avançado)</mat-option>
+              </mat-select></mat-form-field
+            >
+            <div class="form-grid">
+              @if (frequency() !== 'hourly' && frequency() !== 'custom') {
+                <mat-form-field
+                  ><mat-label>Horário do envio</mat-label
+                  ><input matInput type="time" formControlName="time" /><mat-hint
+                    >Horário em {{ form.controls.timezone.value }}.</mat-hint
+                  ></mat-form-field
+                >
+              }
+              @if (frequency() === 'weekly') {
+                <mat-form-field
+                  ><mat-label>Dia da semana</mat-label
+                  ><mat-select formControlName="weekday">
+                    @for (day of weekdays; track day.value) {
+                      <mat-option [value]="day.value">{{ day.label }}</mat-option>
+                    }
+                  </mat-select></mat-form-field
+                >
+              }
+              @if (frequency() === 'monthly') {
+                <mat-form-field
+                  ><mat-label>Dia do mês</mat-label
+                  ><input matInput type="number" min="1" max="31" formControlName="monthDay"
+                /></mat-form-field>
+              }
+            </div>
+            @if (frequency() === 'monthly' && recurrence.controls.monthDay.value > 28) {
+              <p class="form-note">
+                Meses sem esse dia serão pulados. Use um dia até 28 para enviar em todos os meses.
+              </p>
+            }
+          </div>
+          @if (frequency() === 'custom') {
+            <mat-form-field
+              ><mat-label>Expressão cron (avançado)</mat-label
+              ><input matInput formControlName="cron" placeholder="0 0 8 * * MON-FRI" />
+              <mat-hint>Segundo, minuto, hora, dia, mês e dia da semana.</mat-hint
+              ><mat-error>Use uma expressão com 6 campos.</mat-error></mat-form-field
+            >
+          }
+          @if (recurrenceError()) {
+            <p class="form-error" role="alert">{{ recurrenceError() }}</p>
+          }
+          <p class="form-note">{{ recurrenceText() }} · {{ form.controls.timezone.value }}</p>
+          <details class="advanced-options">
+            <summary>Período e fuso horário (opcional)</summary>
+            <p class="muted">Sem datas, os envios se repetem até você pausar o agendamento.</p>
+            @if (auth.admin()) {
+              <mat-form-field
+                ><mat-label>Buscar fuso</mat-label
+                ><input matInput #zoneInput type="search" (input)="zoneSearch.set(zoneInput.value)"
+              /></mat-form-field>
+            }
+            <mat-form-field
+              ><mat-label>Fuso do agendamento</mat-label
+              ><mat-select formControlName="timezone">
+                @for (zone of filteredZones(); track zone) {
+                  <mat-option [value]="zone">{{ zone }}</mat-option>
+                }
+              </mat-select></mat-form-field
+            >
+            <div class="form-grid">
+              <mat-form-field
+                ><mat-label>Começar a partir de (opcional)</mat-label
+                ><input matInput type="datetime-local" formControlName="startAt"
+              /></mat-form-field>
+              <mat-form-field
+                ><mat-label>Encerrar em (opcional)</mat-label
+                ><input matInput type="datetime-local" formControlName="endAt"
+              /></mat-form-field>
+            </div>
+            <p class="muted">As duas datas usam o fuso selecionado acima.</p>
+          </details>
+          <p class="muted">
+            Quer enviar uma única vez em uma data? <a routerLink="/send">Use a tela de envio</a>.
+          </p>
+        </section>
+      </form>
+    </section>
+    <aside class="preview-column" aria-label="Conferência do agendamento">
+      <section class="panel">
+        <p class="eyebrow">CONFIRA A REPETIÇÃO</p>
+        <h2>Próximas execuções</h2>
+        <p>{{ recurrenceText() }}</p>
+        <p class="muted">
+          As datas simulam a frequência em {{ form.controls.timezone.value }}. O período opcional
+          será aplicado ao salvar.
+        </p>
+        @if (previewError()) {
+          <p class="form-error" role="alert">{{ previewError() }}</p>
+        }
+        @if (!auth.admin()) {
+          <p class="muted">A simulação está disponível para administradores.</p>
+        }
+        @if (preview(); as result) {
+          @if (result.daylightSavingTransition) {
+            <p class="form-note">
+              Há uma mudança de horário de verão neste período. Confira as datas.
+            </p>
+          }
+          <ol class="occurrence-list">
+            @for (item of result.occurrences; track item.utc) {
+              <li>
+                <p>
+                  {{ occurrenceLabel(item.utc, item.timezone) }}<br /><small class="muted">{{
+                    item.timezone
+                  }}</small>
+                </p>
+              </li>
+            }
+          </ol>
+          @if (highFrequency()) {
+            <p class="form-note">
+              Os envios se repetem mais de uma vez por hora. Confira o limite da aplicação.
+            </p>
+          }
+        }
+        @if (nextRun()) {
+          <h3>Próxima execução salva</h3>
+          <app-date-time [value]="nextRun()" />
+        }
+      </section>
+      <section class="panel message-preview">
+        <h2>Prévia da mensagem</h2>
+        <p class="muted">Para: {{ form.controls.recipient.value || 'Preencha o destinatário' }}</p>
+        @if (messagePreview(); as value) {
+          @if (value.missingVariables?.length) {
+            <p class="form-note">Preencha os dados para completar a mensagem.</p>
+          }
+          @if (value.subject) {
+            <h3>{{ value.subject }}</h3>
+          }
+          <pre>{{ value.content }}</pre>
+        } @else {
+          <p class="muted">Escolha um template para ver a mensagem.</p>
+        }
+      </section>
+    </aside>
+    @if (auth.admin()) {
+      <section class="panel composer-submit" aria-label="Finalizar agendamento">
+        <p>
+          As próximas mensagens serão enviadas para
+          <strong>{{ form.controls.recipient.value || 'o destinatário escolhido' }}</strong
+          >.
+        </p>
+        <p class="muted">
+          {{ recurrenceText() }} · {{ form.controls.timezone.value }}. Você pode pausar ou editar
+          depois.
+        </p>
+        @if (saveError()) {
+          <p class="form-error" role="alert">{{ saveError() }}</p>
+        }
+        <button
+          mat-flat-button
+          type="submit"
+          form="schedule-form"
+          [disabled]="saving() || templatesLoading()"
+        >
+          {{ saving() ? 'Salvando…' : 'Salvar agendamento' }}
+        </button>
+      </section>
+    }
+  </div>
+}

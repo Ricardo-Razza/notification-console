@@ -21,6 +21,32 @@ após o bootstrap, remova a senha do ambiente e reinicie. A senha precisa ter ao
 e no máximo 72 bytes UTF-8. A sessão fica em cookie HttpOnly, SameSite Strict; o CSRF usa
 XSRF-TOKEN e X-XSRF-TOKEN pelo suporte nativo do HttpClient. Produção requer HTTPS e ADMIN_COOKIE_SECURE=true.
 
+## Criar mensagens e enviar
+
+1. **Templates:** comece com um exemplo ou escreva a mensagem. Use “Inserir dado” para
+   personalizar o texto com nome, link ou outro valor. Os dados de exemplo servem só para a prévia.
+   O identificador é ajustado automaticamente para letras maiúsculas e sublinhados.
+2. **Agendamentos:** escolha um template e preencha os campos que ele pede. Selecione a frequência,
+   o horário e, quando necessário, o dia. Confira as próximas execuções e a mensagem antes de salvar.
+   Cron personalizado, datas de início/fim e mudança de fuso continuam disponíveis nas opções avançadas.
+   Configurações existentes e dados adicionais são preservados ao editar.
+3. **Enviar:** escolha o template, preencha o destinatário e os dados da mensagem. Escolha
+   “Enviar agora” ou “Agendar para uma data”. Confira o resumo e a prévia antes de confirmar.
+   Envios únicos usam esta tela; mensagens recorrentes usam Agendamentos.
+
+Quando só existe uma aplicação ativa ou um template disponível, a seleção é feita automaticamente.
+Os campos obrigatórios são destacados ao tentar continuar e o primeiro campo inválido recebe foco.
+No celular, os botões de confirmação aparecem depois da prévia.
+
+Os testes dos formulários podem rodar com dados simulados, sem enviar e-mails:
+
+```sh
+npx playwright test e2e/guided-forms.spec.ts
+```
+
+Todas as chamadas de API dessa suíte são interceptadas no navegador. Ela cobre criação,
+edição e preservação de cron avançado, validação, envio único e acessibilidade em celular e desktop.
+
 ## Contrato e verificações
 
 ```sh
